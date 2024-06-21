@@ -11,14 +11,13 @@
 // Matrix Operations
 // -- Matrix Multiplication.
 // -- Transpose.
-// -- Inverse
+// -- Inverse.
 // -- Trace.
-// -- Determinant
+// -- Determinant.
 
 // Element Wise Operations
 // -- Addition.
 // -- Subtraction.
-// -- Division
 // -- Multiplication.
 // -- Log.
 // -- Sin.
@@ -53,14 +52,30 @@
 #include <time.h>
 #include <math.h>
 
+static size_t total_allocated_memory;
+
+typedef struct {
+  char *start;
+  char *end;
+} Range;
+
 typedef struct {
     double* array;
 
     int shape[2];
     int stride[2];
-}Matrix;
+}Tensor;
 
-void Print (Matrix* matrix) {
+void* malloc_trace (size_t size) {
+    void* ptr = malloc(size);
+    if (ptr != NULL) {
+        printf("Allocated %zu space\n", size);
+        total_allocated_memory += size;
+    }
+    return ptr;
+}
+
+void Print (Tensor* matrix) {
     int rows = matrix->shape[0];
     int cols = matrix->shape[1];
 
@@ -72,9 +87,55 @@ void Print (Matrix* matrix) {
     }
 }
 
-double* get_index (Matrix* matrix, int position[2]) {
-    double* element = &(matrix->array[position[0] * matrix->stride[0] + position[1] * matrix->stride[1]]);
-    return element;
+int* split_colon(const char *str, const int RANGE_MAX) {
+    Range result;
+    result.start = NULL;
+    result.end = NULL;
+    
+    char *colon = strchr(str, ':');
+    
+    if (colon == NULL) {
+        int* res = malloc(2 * sizeof(int));
+        res[0] = atoi(str);
+        res[1] = atoi(str) + 1;
+        return res;
+    } else if (*str == '\0') {
+        printf("Invalid string format (empty string)\n");
+    } else if (colon == str + strlen(str) - 1) {
+        result.start = malloc((strlen(str) - 1) * sizeof(char) + 1);
+        strncpy(result.start, str, strlen(str) - 1);
+        result.start[strlen(str) - 1] = '\0';
+        result.end = malloc(1 * sizeof(char));
+        result.end[0] = 'f';
+    } else {
+        result.start = malloc((colon - str) * sizeof(char) + 1);
+        strncpy(result.start, str, colon - str);
+        result.start[colon - str] = '\0';
+        result.end = malloc((strlen(str) - (colon - str) - 1) * sizeof(char) + 1);
+        strncpy(result.end, colon + 1, strlen(str) - (colon - str) - 1);
+        result.end[strlen(str) - (colon - str) - 1] = '\0';
+    }
+    int* res = malloc(2 * sizeof(int));
+
+    if (strcmp(result.start, "f") == 1) {
+        res[0] = 0;
+    } else {
+        res[0] = atoi(result.start);
+    }
+    if (strcmp(result.end, "f") == 0) {
+        res[1] = RANGE_MAX;
+    } else {
+        res[1] = atoi(result.end);
+    }
+
+    assert (res[0] < res[1]);
+    assert (res[0] > -1);
+    assert (res[1] <= RANGE_MAX);
+
+    free(result.start);
+    free(result.end);
+
+    return res;
 }
 
 double normal_random (double mean, double std) {
@@ -89,10 +150,10 @@ double normal_random (double mean, double std) {
     return mean + std * z1;
 }
 
-Matrix* CreateMatrix (int shape[2]) {
+Tensor* CreateMatrix (int shape[2]) {
     assert (shape[0] > 0 && shape[1] > 0);
 
-    Matrix* matrix = (Matrix*)malloc(sizeof(Matrix));
+    Tensor* matrix = (Tensor*)malloc(sizeof(Tensor));
     matrix->array = (double*)malloc((size_t)(shape[0] * shape[1]) * sizeof(double));
     matrix->shape[0] = shape[0];
     matrix->shape[1] = shape[1];
@@ -102,24 +163,106 @@ Matrix* CreateMatrix (int shape[2]) {
     return matrix;
 }
 
-Matrix* Zeros (int shape[2]) {
-    Matrix* zeros = CreateMatrix(shape);
+int* get_index_referrence (Tensor* matrix, char* position[2]) {
+    int row_max = matrix->shape[0];
+    int col_max = matrix->shape[1];
+    int* row_range = split_colon(position[0], row_max);
+    int* col_range = split_colon(position[1], col_max);
+    int row_start = row_range[0];
+    int row_end = row_range[1];
+    int col_start = col_range[0];
+    int col_end = col_range[1];
+
+    int* output = (int*)malloc(4 * sizeof(int));
+    output[0] = row_start;
+    output[1] = row_end;
+    output[2] = col_start;
+    output[3] = col_end;
+    
+    return output;
+}
+
+void MAT_ADD (Tensor* main, Tensor* values_to_add, char* index[2]) {
+    int* output = get_index_referrence(main, index);
+
+    assert(values_to_add->shape[0] == (output[1] - output[0]));
+    assert(values_to_add->shape[1] == (output[3] - output[2]));
+
+    for (int i = output[0]; i < output[1]; i++) {
+        for (int j = output[2]; j < output[3]; j++) {
+            main->array[
+                (i * main->stride[0]) + 
+                (j * main->stride[1])
+            ] += values_to_add->array[
+                ((i-output[0]) * values_to_add->stride[0]) + 
+                ((j-output[2]) * values_to_add->stride[1])
+            ];
+        }
+    }
+
+    free(output);
+}
+
+void MAT_SUB (Tensor* main, Tensor* values_to_add, char* index[2]) {
+    int* output = get_index_referrence(main, index);
+
+    assert(values_to_add->shape[0] == (output[1] - output[0]));
+    assert(values_to_add->shape[1] == (output[3] - output[2]));
+
+    for (int i = output[0]; i < output[1]; i++) {
+        for (int j = output[2]; j < output[3]; j++) {
+            main->array[
+                (i * main->stride[0]) + 
+                (j * main->stride[1])
+            ] -= values_to_add->array[
+                ((i-output[0]) * values_to_add->stride[0]) + 
+                ((j-output[2]) * values_to_add->stride[1])
+            ];
+        }
+    }
+
+    free(output);
+}
+
+void MAT_ELE_MUL (Tensor* main, Tensor* values_to_add, char* index[2]) {
+    int* output = get_index_referrence(main, index);
+
+    assert(values_to_add->shape[0] == (output[1] - output[0]));
+    assert(values_to_add->shape[1] == (output[3] - output[2]));
+
+    for (int i = output[0]; i < output[1]; i++) {
+        for (int j = output[2]; j < output[3]; j++) {
+            main->array[
+                (i * main->stride[0]) + 
+                (j * main->stride[1])
+            ] *= values_to_add->array[
+                ((i-output[0]) * values_to_add->stride[0]) + 
+                ((j-output[2]) * values_to_add->stride[1])
+            ];
+        }
+    }
+
+    free(output);
+}
+
+Tensor* Zeros (int shape[2]) {
+    Tensor* zeros = CreateMatrix(shape);
     for (int i = 0; i < shape[0] * shape[1]; i++) {
         zeros->array[i] = 0;
     }
     return zeros;
 }
 
-Matrix* Ones (int shape[2]) {
-    Matrix* ones = CreateMatrix(shape);
+Tensor* Ones (int shape[2]) {
+    Tensor* ones = CreateMatrix(shape);
     for (int i = 0; i < shape[0] * shape[1]; i++) {
         ones->array[i] = 1;
     }
     return ones;
 }
 
-Matrix* Random (int shape[2]) {
-    Matrix* ones = CreateMatrix(shape);
+Tensor* Random (int shape[2]) {
+    Tensor* ones = CreateMatrix(shape);
     for (int i = 0; i < shape[0] * shape[1]; i++) {
         int rand_value = rand();
         ones->array[i] = (double)rand_value / (double)RAND_MAX;
@@ -127,9 +270,9 @@ Matrix* Random (int shape[2]) {
     return ones;
 }
 
-Matrix* Gaussian (int shape[2], double mean, double std) {
+Tensor* Gaussian (int shape[2], double mean, double std) {
     srand(time(NULL));
-    Matrix* normal = CreateMatrix(shape);
+    Tensor* normal = CreateMatrix(shape);
     for (int i = 0; i < shape[0] * shape[1]; i++) {
         int rand_value = rand();
         normal->array[i] = normal_random(mean, std);
@@ -137,10 +280,10 @@ Matrix* Gaussian (int shape[2], double mean, double std) {
     return normal;
 }
 
-Matrix* Eye (int shape[2]) {
+Tensor* Eye (int shape[2]) {
     assert (shape[0] == shape[1]);
 
-    Matrix* eye = CreateMatrix(shape);
+    Tensor* eye = CreateMatrix(shape);
     for (int i = 0; i < shape[0]; i++) {
         for (int j = 0; j < shape[1]; j++) {
             if (i == j) {
@@ -153,10 +296,10 @@ Matrix* Eye (int shape[2]) {
     return eye;
 }
 
-Matrix* ADD (Matrix* m1, Matrix* m2) {
+Tensor* ADD (Tensor* m1, Tensor* m2) {
     assert (m1->shape[0] == m2->shape[0] && m1->shape[1] == m2->shape[1]);
 
-    Matrix* m3 = CreateMatrix(m1->shape);
+    Tensor* m3 = CreateMatrix(m1->shape);
     for (int row = 0; row < m1->shape[0]; row++) {
         for (int col = 0; col < m1->shape[1]; col++) {
             m3->array[row * m3->stride[0] + col * m3->stride[1]] = m1->array[row * m1->stride[0] + col * m1->stride[1]]+
@@ -166,10 +309,10 @@ Matrix* ADD (Matrix* m1, Matrix* m2) {
     return m3;
 }
 
-Matrix* SUBTRACT (Matrix* m1, Matrix* m2) {
+Tensor* SUBTRACT (Tensor* m1, Tensor* m2) {
     assert (m1->shape[0] == m2->shape[0] && m1->shape[1] == m2->shape[1]);
 
-    Matrix* m3 = CreateMatrix(m1->shape);
+    Tensor* m3 = CreateMatrix(m1->shape);
     for (int row = 0; row < m1->shape[0]; row++) {
         for (int col = 0; col < m1->shape[1]; col++) {
             m3->array[row * m3->stride[0] + col * m3->stride[1]] = m1->array[row * m1->stride[0] + col * m1->stride[1]]-
@@ -179,10 +322,10 @@ Matrix* SUBTRACT (Matrix* m1, Matrix* m2) {
     return m3;
 }
 
-Matrix* MULT (Matrix* m1, Matrix* m2) {
+Tensor* MULT (Tensor* m1, Tensor* m2) {
     assert (m1->shape[0] == m2->shape[0] && m1->shape[1] == m2->shape[1]);
 
-    Matrix* m3 = CreateMatrix(m1->shape);
+    Tensor* m3 = CreateMatrix(m1->shape);
     for (int row = 0; row < m1->shape[0]; row++) {
         for (int col = 0; col < m1->shape[1]; col++) {
             m3->array[row * m3->stride[0] + col * m3->stride[1]] = m1->array[row * m1->stride[0] + col * m1->stride[1]]*
@@ -192,11 +335,11 @@ Matrix* MULT (Matrix* m1, Matrix* m2) {
     return m3;
 }
 
-Matrix* MATMUL (Matrix* m1, Matrix* m2) {
+Tensor* MATMUL (Tensor* m1, Tensor* m2) {
     assert (m1->shape[1] == m2->shape[0]);
 
     int new_shape[2] = {m1->shape[0], m2->shape[1]};
-    Matrix* m3 = CreateMatrix(new_shape);
+    Tensor* m3 = CreateMatrix(new_shape);
 
     for (int i = 0; i < m3->shape[0]; i++) {
         for (int j=0; j < m3->shape[1]; j++) {
@@ -211,90 +354,103 @@ Matrix* MATMUL (Matrix* m1, Matrix* m2) {
     return m3;
 }
 
-Matrix* Transpose (Matrix* m) {
-    int temp = m->shape[0];
-    int temp2 = m->stride[0];
-    m->shape[0] = m->shape[1];
-    m->stride[0] = m->stride[1];
-    m->stride[1] = temp2;
-    m->shape[1] = temp;
+Tensor* Transpose (Tensor* m) {
+    Tensor* new_matrix = CreateMatrix(m->shape);
+
+    for (int i = 0; i < m->shape[0]; i++) {
+        for (int j = 0; j < m->shape[1]; j++) {
+            new_matrix->array[
+                (i * new_matrix->stride[0]) + 
+                (j * new_matrix->stride[1])
+            ] = m->array[(i * m->stride[0]) + (j * m->stride[1])];
+        }
+    }
+
+    new_matrix->shape[0] = m->shape[1];
+    new_matrix->shape[1] = m->shape[0];
+    new_matrix->stride[0] = m->stride[1];
+    new_matrix->stride[1] = m->stride[0];
 
     return m;
 }
 
-Matrix* SIN (Matrix* matrix) {
+Tensor* SIN (Tensor* matrix) {
     int rows = matrix->shape[0];
     int cols = matrix->shape[1];
 
+    Tensor* new_matrix = CreateMatrix(matrix->shape);
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
-            matrix->array[
-                (i * matrix->stride[0]) + 
-                (j * matrix->stride[1])
+            new_matrix->array[
+                (i * new_matrix->stride[0]) + 
+                (j * new_matrix->stride[1])
             ] = sin(matrix->array[(i * matrix->stride[0]) + (j * matrix->stride[1])]);
         }
     }
 
-    return matrix;
+    return new_matrix;
 }
 
-Matrix* COS (Matrix* matrix) {
+Tensor* COS (Tensor* matrix) {
     int rows = matrix->shape[0];
     int cols = matrix->shape[1];
 
+    Tensor* new_matrix = CreateMatrix(matrix->shape);
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
-            matrix->array[
-                (i * matrix->stride[0]) + 
-                (j * matrix->stride[1])
+            new_matrix->array[
+                (i * new_matrix->stride[0]) + 
+                (j * new_matrix->stride[1])
             ] = cos(matrix->array[(i * matrix->stride[0]) + (j * matrix->stride[1])]);
         }
     }
 
-    return matrix;
+    return new_matrix;
 }
 
-Matrix* TAN (Matrix* matrix) {
+Tensor* TAN (Tensor* matrix) {
     int rows = matrix->shape[0];
     int cols = matrix->shape[1];
 
+    Tensor* new_matrix = CreateMatrix(matrix->shape);
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             assert (cos(matrix->array[
                 (i * matrix->stride[0]) + 
                 (j * matrix->stride[1])
             ]) != 0);
-            matrix->array[
-                (i * matrix->stride[0]) + 
-                (j * matrix->stride[1])
+            new_matrix->array[
+                (i * new_matrix->stride[0]) + 
+                (j * new_matrix->stride[1])
             ] = tan(matrix->array[(i * matrix->stride[0]) + (j * matrix->stride[1])]);
         }
     }
 
-    return matrix;
+    return new_matrix;
 }
 
-Matrix* LOG (Matrix* matrix) {
+Tensor* LOG (Tensor* matrix) {
     int rows = matrix->shape[0];
     int cols = matrix->shape[1];
 
+    Tensor* new_matrix = CreateMatrix(matrix->shape);
     for (int i = 0; i < rows; i++) {
         for (int j = 0; j < cols; j++) {
             assert (matrix->array[
                 (i * matrix->stride[0]) + 
                 (j * matrix->stride[1])
             ] != 0);
-            matrix->array[
-                (i * matrix->stride[0]) + 
-                (j * matrix->stride[1])
+            new_matrix->array[
+                (i * new_matrix->stride[0]) + 
+                (j * new_matrix->stride[1])
             ] = log(matrix->array[(i * matrix->stride[0]) + (j * matrix->stride[1])]);
         }
     }
 
-    return matrix;
+    return new_matrix;
 }
 
-double Trace (Matrix* m) {
+double Trace (Tensor* m) {
     assert (m->shape[0] == m->shape[1]);
 
     double sum = 0;
@@ -308,7 +464,7 @@ double Trace (Matrix* m) {
     return sum;
 }
 
-Matrix* ELEMENT_POW (Matrix* matrix, double n) {
+Tensor* ELEMENT_POW (Tensor* matrix, double n) {
     int rows = matrix->shape[0];
     int cols = matrix->shape[1];
 
@@ -324,12 +480,12 @@ Matrix* ELEMENT_POW (Matrix* matrix, double n) {
     return matrix;
 }
 
-Matrix* SQRT (Matrix* m) {
+Tensor* SQRT (Tensor* m) {
     return ELEMENT_POW(m, 0.5);
 }
 
-Matrix* POW (Matrix* matrix, int n) {
-    Matrix* res = Ones(matrix->shape);
+Tensor* POW (Tensor* matrix, int n) {
+    Tensor* res = Ones(matrix->shape);
     while (n > 0) {
         res = MATMUL(res, matrix);
         n --;
@@ -337,18 +493,137 @@ Matrix* POW (Matrix* matrix, int n) {
     return res;
 }
 
-
-
-int main() {
-    // srand(time(NULL));
-
-    // int shape[2] = {5, 5};
-
-    // Matrix* I = Random(shape);
-
-    // Print(I);
-    // printf("\n");
-    // Print(LOG(I));
+double determinant(double **matrix, int size) {
+    if (size == 1) {
+        return matrix[0][0];
+    }
+    
+    if (size == 2) {
+        return matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+    }
+    
+    double det = 0;
+    double **submatrix = (double **)malloc((size) * sizeof(double *));
+    for (int i = 0; i < size - 1; i++) {
+        submatrix[i] = (double *)malloc((size) * sizeof(double));
+    }
+    
+    for (int j = 0; j < size; j++) {
+        int sub_i = 0;
+        for (int i = 1; i < size; i++) {
+            int sub_j = 0;
+            for (int k = 0; k < size; k++) {
+                if (k == j) continue;
+                submatrix[sub_i][sub_j] = matrix[i][k];
+                sub_j++;
+            } 
+            sub_i++;
+        }
+        
+        det += pow(-1, j) * matrix[0][j] * determinant(submatrix, size - 1);
+    }
+    
+    for (int i = 0; i < size - 1; i++) {
+        free(submatrix[i]);
+    }
+    free(submatrix);
+    
+    return det;
 }
+
+double Det (Tensor* matrix) {
+    double ** sub_matrix = (double**)malloc(matrix->shape[0] * sizeof(double*));
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        sub_matrix[i] = (double*)malloc(matrix->shape[0] * sizeof(double));
+    }
+
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        for (int j = 0; j < matrix->shape[1]; j++) {
+            sub_matrix[i][j] = matrix->array[i * matrix->stride[0] + j * matrix->stride[1]];
+        }
+    }
+
+    return determinant(sub_matrix, matrix->shape[0]);
+}
+
+void matrix_inverse (double** matrix, double** inverse, int N) {
+    double det = determinant(matrix, N);
+    
+    if (det == 0) {
+        printf("Matrix is singular and cannot be inverted.\n");
+        return;
+    }
+    
+    double adjoint[N][N];
+    
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            double ** sub_matrix = (double**)malloc(N * sizeof(double*));
+            for (int i = 0; i < N; i++) {
+                sub_matrix[i] = (double*)malloc(N * sizeof(double));
+            }
+            int subi = 0;
+            for (int r = 0; r < N; r++) {
+                if (r == i)
+                    continue;
+                int subj = 0;
+                for (int c = 0; c < N; c++) {
+                    if (c == j)
+                        continue;
+                    sub_matrix[subi][subj] = matrix[r][c];
+                    subj++;
+                }
+                subi++;
+            }
+            adjoint[j][i] = pow(-1, i + j) * determinant(sub_matrix, N - 1);
+        }
+    }
+    
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            inverse[i][j] = adjoint[i][j] / det;
+        }
+    }
+}
+
+Tensor* Inverse (Tensor* matrix) {
+    double ** sub_matrix = (double**)malloc(matrix->shape[0] * sizeof(double*));
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        sub_matrix[i] = (double*)malloc(matrix->shape[0] * sizeof(double));
+    }
+
+    double ** inverse = (double**)malloc(matrix->shape[0] * sizeof(double*));
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        inverse[i] = (double*)malloc(matrix->shape[0] * sizeof(double));
+    }
+
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        for (int j = 0; j < matrix->shape[1]; j++) {
+            sub_matrix[i][j] = matrix->array[i * matrix->stride[0] + j * matrix->stride[1]];
+        }
+    }
+
+    matrix_inverse(sub_matrix, inverse, matrix->shape[0]);
+
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        free(sub_matrix[i]);
+    }
+    free(sub_matrix);
+
+    Tensor* inv = CreateMatrix(matrix->shape);
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        for (int j = 0; j < matrix->shape[1]; j++) {
+            inv->array[i * inv->stride[0] + j * inv->stride[1]] = inverse[i][j];
+        }
+    }
+
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        free(inverse[i]);
+    }
+    free(inverse);
+
+    return inv;
+}
+
 
 // gcc numC.c -o exec
