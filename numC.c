@@ -27,20 +27,22 @@
 // -- Square Root.
 
 // Aggregation Functions
-// -- Summation
-// -- Mean
-// -- Mode
-// -- Median
-// -- Standard Deviation
-// -- Max
-// -- Min
+// -- Summation.
+// -- Mean.
+// -- Standard Deviation.
+// -- Max.
+// -- Min.
 
 // Reshaping and Indexing
-// -- Reshape
-// -- Concantenate
-// -- Hstack
-// -- Vstack
-// -- Flatten
+// -- Reshape.
+// -- Hstack.
+// -- Vstack.
+// -- Flatten.
+
+// Other Functions
+// -- Expand?
+// -- Reduce
+// -- Broadcast
 
 // Utility Functions
 // -- Copy
@@ -245,6 +247,26 @@ void MAT_ELE_MUL (Tensor* main, Tensor* values_to_add, char* index[2]) {
     free(output);
 }
 
+double Min (Tensor* matrix) {
+    double min = matrix->array[0];
+    for (int i = 1; i < (matrix->shape[0] * matrix->shape[1]); i++) {
+        if (min > matrix->array[i]) {
+            min = matrix->array[i];
+        }
+    }
+    return min;
+}
+
+double Max (Tensor* matrix) {
+    double max = matrix->array[0];
+    for (int i = 1; i < (matrix->shape[0] * matrix->shape[1]); i++) {
+        if (max < matrix->array[i]) {
+            max = matrix->array[i];
+        }
+    }
+    return max;
+}
+
 Tensor* Zeros (int shape[2]) {
     Tensor* zeros = CreateMatrix(shape);
     for (int i = 0; i < shape[0] * shape[1]; i++) {
@@ -355,23 +377,19 @@ Tensor* MATMUL (Tensor* m1, Tensor* m2) {
 }
 
 Tensor* Transpose (Tensor* m) {
-    Tensor* new_matrix = CreateMatrix(m->shape);
+    int shape[2] = {m->shape[1], m->shape[0]};
+    Tensor* new_matrix = CreateMatrix(shape);
 
     for (int i = 0; i < m->shape[0]; i++) {
         for (int j = 0; j < m->shape[1]; j++) {
             new_matrix->array[
                 (i * new_matrix->stride[0]) + 
                 (j * new_matrix->stride[1])
-            ] = m->array[(i * m->stride[0]) + (j * m->stride[1])];
+            ] = m->array[(i * m->stride[1]) + (j * m->stride[0])];
         }
     }
 
-    new_matrix->shape[0] = m->shape[1];
-    new_matrix->shape[1] = m->shape[0];
-    new_matrix->stride[0] = m->stride[1];
-    new_matrix->stride[1] = m->stride[0];
-
-    return m;
+    return new_matrix;
 }
 
 Tensor* SIN (Tensor* matrix) {
@@ -625,5 +643,146 @@ Tensor* Inverse (Tensor* matrix) {
     return inv;
 }
 
+Tensor* SUM (Tensor* matrix) {
+    double sum = 0;
+    for (int i = 0; i < matrix->shape[0] * matrix->shape[1]; i++) {
+        sum += matrix->array[i];
+    }
+    int shape[2] = {1, 1};
+    Tensor* new_martix = CreateMatrix(shape);
+    new_martix->array[0] = sum;
+    return new_martix;
+}
+
+Tensor* MEAN (Tensor* matrix) {
+    double sum = 0;
+    for (int i = 0; i < matrix->shape[0] * matrix->shape[1]; i++) {
+        sum += matrix->array[i];
+    }
+    int denominator = matrix->shape[0] * matrix->shape[1];
+    int shape[2] = {1, 1};
+    Tensor* new_martix = CreateMatrix(shape);
+
+    new_martix->array[0] = sum / denominator;
+    return new_martix;
+}
+
+Tensor* STD (Tensor* matrix) {
+    double sum = 0;
+    for (int i = 0; i < matrix->shape[0] * matrix->shape[1]; i++) {
+        sum += matrix->array[i];
+    }
+    double mean = sum / (matrix->shape[0] * matrix->shape[1]);
+    double variance = 0;
+    for (int i = 0; i < matrix->shape[0] * matrix->shape[1]; i++) {
+        double diff = matrix->array[i] - mean;
+        variance += diff * diff;
+    }
+    double std = sqrt(variance / ((matrix->shape[0] * matrix->shape[1]) - 1));
+
+    int shape[2] = {1, 1};
+    Tensor* new_martix = CreateMatrix(shape);
+    new_martix->array[0] = std;
+    return new_martix;
+}
+
+void Reshape (Tensor* matrix, int shape[2]) {
+    assert ((matrix->shape[0] * matrix->shape[1]) == (shape[0] * shape[1]));
+
+    matrix->shape[0] = shape[0];
+    matrix->shape[1] = shape[1];
+    matrix->stride[0] = shape[1];
+    matrix->stride[1] = 1;
+}
+
+void Flatten (Tensor* matrix, int axis) {
+    if (axis == 0) {
+        int shape[2] = {matrix->shape[0] * matrix->shape[1], 1};
+        Reshape(matrix, shape);
+    } else {
+        int shape[2] = {1, matrix->shape[0] * matrix->shape[1]};
+        Reshape(matrix, shape);
+    }
+}
+
+Tensor* Vstack (Tensor* m1, Tensor* m2) {
+    assert (m1->shape[1] == m2->shape[1]);
+    int shape[2] = {m1->shape[0] + m2->shape[0], m1->shape[1]};
+    Tensor* new_matrix = CreateMatrix(shape);
+
+    for (int i = 0; i < m2->shape[0]; i++) {
+        for (int j = 0; j < m2->shape[1]; j++) {
+            new_matrix->array[(i * new_matrix->stride[0]) + 
+                             (j * new_matrix->stride[1])
+                            ] = m2->array[(i * m2->stride[0]) + 
+                                          (j * m2->stride[1])
+                                        ];
+        }
+    }
+
+    for (int i = m2->shape[0]; i < m2->shape[0] + m1->shape[0]; i++) {
+        for (int j = 0; j < m1->shape[1]; j++) {
+            new_matrix->array[(i * new_matrix->stride[0]) + 
+                              (j * new_matrix->stride[1])
+                            ] = m1->array[((i - m2->shape[0]) * m1->stride[0]) + 
+                                          (j * m1->stride[1])
+                                        ];
+        }
+    }
+
+    return new_matrix;
+}
+
+Tensor* Hstack (Tensor* m1, Tensor* m2) {
+    assert (m1->shape[0] == m2->shape[0]);
+    int shape[2] = {m1->shape[0], m1->shape[1] + m2->shape[1]};
+    Tensor* new_matrix = CreateMatrix(shape);
+
+    for (int i = 0; i < m2->shape[0]; i++) {
+        for (int j = 0; j < m2->shape[1]; j++) {
+            new_matrix->array[(i * new_matrix->stride[0]) + 
+                             (j * new_matrix->stride[1])
+                            ] = m2->array[(i * m2->stride[0]) + 
+                                          (j * m2->stride[1])
+                                        ];
+        }
+    }
+
+    for (int i = 0; i < m1->shape[0]; i++) {
+        for (int j = m2->shape[1]; j < m1->shape[1] + m2->shape[1]; j++) {
+            new_matrix->array[(i * new_matrix->stride[0]) + 
+                              (j * new_matrix->stride[1])
+                            ] = m1->array[(i * m1->stride[0]) + 
+                                          ((j - m2->shape[1]) * m1->stride[1])
+                                        ];
+        }
+    }
+
+    return new_matrix;
+}
+
+// int main () {
+//     clock_t start, end;
+//     double cpu_time_used;
+
+//     start = clock();
+
+//     int shape[2] = {5, 4};
+//     int newShape[2] = {5, 5};
+
+//     Tensor* r = Random(shape);
+//     Tensor* I = Eye(newShape);
+//     Tensor* h = Hstack(r, I);
+
+//     Print(h);
+
+//     end = clock();
+
+//     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+//     printf("Total compile time: %f seconds\n", cpu_time_used);
+
+//     return 0;
+// }
 
 // gcc numC.c -o exec
