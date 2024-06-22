@@ -41,11 +41,28 @@
 
 // Other Functions
 // -- Expand?
-// -- Reduce
+// -- Reduce.
 // -- Broadcast
 
 // Utility Functions
-// -- Copy
+// -- Copy.
+
+// Functions that require backward()
+// -- ADD()
+// -- SUBTRACT()
+// -- MULT()
+// -- MATMUL()
+// -- SIN()
+// -- COS()
+// -- TAN()
+// -- LOG()
+// -- Transpose()
+// -- POW()
+// -- Reduce()
+// -- ELEMENT_POW()
+// -- SUM()
+// -- MEAN()
+// -- STD()
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,6 +72,12 @@
 #include <math.h>
 
 static size_t total_allocated_memory;
+
+/*
+ ****************************************************************************
+ *                                Structs                                   *
+ ****************************************************************************
+ */
 
 typedef struct {
   char *start;
@@ -68,6 +91,52 @@ typedef struct {
     int stride[2];
 }Tensor;
 
+/*
+ ****************************************************************************
+ *                             Helper Functions                             *
+ ****************************************************************************
+ */
+
+void matrix_inverse (double** matrix, double** inverse, int N) {
+    double det = determinant(matrix, N);
+    
+    if (det == 0) {
+        printf("Matrix is singular and cannot be inverted.\n");
+        return;
+    }
+    
+    double adjoint[N][N];
+    
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            double ** sub_matrix = (double**)malloc(N * sizeof(double*));
+            for (int i = 0; i < N; i++) {
+                sub_matrix[i] = (double*)malloc(N * sizeof(double));
+            }
+            int subi = 0;
+            for (int r = 0; r < N; r++) {
+                if (r == i)
+                    continue;
+                int subj = 0;
+                for (int c = 0; c < N; c++) {
+                    if (c == j)
+                        continue;
+                    sub_matrix[subi][subj] = matrix[r][c];
+                    subj++;
+                }
+                subi++;
+            }
+            adjoint[j][i] = pow(-1, i + j) * determinant(sub_matrix, N - 1);
+        }
+    }
+    
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            inverse[i][j] = adjoint[i][j] / det;
+        }
+    }
+}
+
 void* malloc_trace (size_t size) {
     void* ptr = malloc(size);
     if (ptr != NULL) {
@@ -75,6 +144,44 @@ void* malloc_trace (size_t size) {
         total_allocated_memory += size;
     }
     return ptr;
+}
+
+double determinant(double **matrix, int size) {
+    if (size == 1) {
+        return matrix[0][0];
+    }
+    
+    if (size == 2) {
+        return matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+    }
+    
+    double det = 0;
+    double **submatrix = (double **)malloc((size) * sizeof(double *));
+    for (int i = 0; i < size - 1; i++) {
+        submatrix[i] = (double *)malloc((size) * sizeof(double));
+    }
+    
+    for (int j = 0; j < size; j++) {
+        int sub_i = 0;
+        for (int i = 1; i < size; i++) {
+            int sub_j = 0;
+            for (int k = 0; k < size; k++) {
+                if (k == j) continue;
+                submatrix[sub_i][sub_j] = matrix[i][k];
+                sub_j++;
+            } 
+            sub_i++;
+        }
+        
+        det += pow(-1, j) * matrix[0][j] * determinant(submatrix, size - 1);
+    }
+    
+    for (int i = 0; i < size - 1; i++) {
+        free(submatrix[i]);
+    }
+    free(submatrix);
+    
+    return det;
 }
 
 void Print (Tensor* matrix) {
@@ -152,19 +259,6 @@ double normal_random (double mean, double std) {
     return mean + std * z1;
 }
 
-Tensor* CreateMatrix (int shape[2]) {
-    assert (shape[0] > 0 && shape[1] > 0);
-
-    Tensor* matrix = (Tensor*)malloc(sizeof(Tensor));
-    matrix->array = (double*)malloc((size_t)(shape[0] * shape[1]) * sizeof(double));
-    matrix->shape[0] = shape[0];
-    matrix->shape[1] = shape[1];
-    matrix->stride[0] = shape[1];
-    matrix->stride[1] = 1;
-
-    return matrix;
-}
-
 int* get_index_referrence (Tensor* matrix, char* position[2]) {
     int row_max = matrix->shape[0];
     int col_max = matrix->shape[1];
@@ -183,6 +277,79 @@ int* get_index_referrence (Tensor* matrix, char* position[2]) {
     
     return output;
 }
+
+
+/*
+ ****************************************************************************
+ *                             Creation Operations                          *
+ ****************************************************************************
+*/
+
+Tensor* Zeros (int shape[2]) {
+    Tensor* zeros = CreateMatrix(shape);
+    for (int i = 0; i < shape[0] * shape[1]; i++) {
+        zeros->array[i] = 0;
+    }
+    return zeros;
+}
+
+Tensor* Ones (int shape[2]) {
+    Tensor* ones = CreateMatrix(shape);
+    for (int i = 0; i < shape[0] * shape[1]; i++) {
+        ones->array[i] = 1;
+    }
+    return ones;
+}
+
+Tensor* Random (int shape[2]) {
+    Tensor* ones = CreateMatrix(shape);
+    for (int i = 0; i < shape[0] * shape[1]; i++) {
+        int rand_value = rand();
+        ones->array[i] = (double)rand_value / (double)RAND_MAX;
+    }
+    return ones;
+}
+
+Tensor* Gaussian (int shape[2], double mean, double std) {
+    srand(time(NULL));
+    Tensor* normal = CreateMatrix(shape);
+    for (int i = 0; i < shape[0] * shape[1]; i++) {
+        int rand_value = rand();
+        normal->array[i] = normal_random(mean, std);
+    }
+    return normal;
+}
+
+Tensor* Eye (int shape[2]) {
+    assert (shape[0] == shape[1]);
+
+    Tensor* eye = CreateMatrix(shape);
+    for (int i = 0; i < shape[0]; i++) {
+        for (int j = 0; j < shape[1]; j++) {
+            if (i == j) {
+                eye->array[(i * eye->stride[0]) + (j * eye->stride[1])] = 1;
+            } else {
+                eye->array[(i * eye->stride[0]) + (j * eye->stride[1])] = 0;
+            }
+        }
+    }
+    return eye;
+}
+
+Tensor* CreateMatrix (int shape[2]) {
+    assert (shape[0] > 0 && shape[1] > 0);
+
+    Tensor* matrix = (Tensor*)malloc(sizeof(Tensor));
+    matrix->array = (double*)malloc((size_t)(shape[0] * shape[1]) * sizeof(double));
+    matrix->shape[0] = shape[0];
+    matrix->shape[1] = shape[1];
+    matrix->stride[0] = shape[1];
+    matrix->stride[1] = 1;
+
+    return matrix;
+}
+
+
 
 void MAT_ADD (Tensor* main, Tensor* values_to_add, char* index[2]) {
     int* output = get_index_referrence(main, index);
@@ -265,57 +432,6 @@ double Max (Tensor* matrix) {
         }
     }
     return max;
-}
-
-Tensor* Zeros (int shape[2]) {
-    Tensor* zeros = CreateMatrix(shape);
-    for (int i = 0; i < shape[0] * shape[1]; i++) {
-        zeros->array[i] = 0;
-    }
-    return zeros;
-}
-
-Tensor* Ones (int shape[2]) {
-    Tensor* ones = CreateMatrix(shape);
-    for (int i = 0; i < shape[0] * shape[1]; i++) {
-        ones->array[i] = 1;
-    }
-    return ones;
-}
-
-Tensor* Random (int shape[2]) {
-    Tensor* ones = CreateMatrix(shape);
-    for (int i = 0; i < shape[0] * shape[1]; i++) {
-        int rand_value = rand();
-        ones->array[i] = (double)rand_value / (double)RAND_MAX;
-    }
-    return ones;
-}
-
-Tensor* Gaussian (int shape[2], double mean, double std) {
-    srand(time(NULL));
-    Tensor* normal = CreateMatrix(shape);
-    for (int i = 0; i < shape[0] * shape[1]; i++) {
-        int rand_value = rand();
-        normal->array[i] = normal_random(mean, std);
-    }
-    return normal;
-}
-
-Tensor* Eye (int shape[2]) {
-    assert (shape[0] == shape[1]);
-
-    Tensor* eye = CreateMatrix(shape);
-    for (int i = 0; i < shape[0]; i++) {
-        for (int j = 0; j < shape[1]; j++) {
-            if (i == j) {
-                eye->array[(i * eye->stride[0]) + (j * eye->stride[1])] = 1;
-            } else {
-                eye->array[(i * eye->stride[0]) + (j * eye->stride[1])] = 0;
-            }
-        }
-    }
-    return eye;
 }
 
 Tensor* ADD (Tensor* m1, Tensor* m2) {
@@ -511,44 +627,6 @@ Tensor* POW (Tensor* matrix, int n) {
     return res;
 }
 
-double determinant(double **matrix, int size) {
-    if (size == 1) {
-        return matrix[0][0];
-    }
-    
-    if (size == 2) {
-        return matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
-    }
-    
-    double det = 0;
-    double **submatrix = (double **)malloc((size) * sizeof(double *));
-    for (int i = 0; i < size - 1; i++) {
-        submatrix[i] = (double *)malloc((size) * sizeof(double));
-    }
-    
-    for (int j = 0; j < size; j++) {
-        int sub_i = 0;
-        for (int i = 1; i < size; i++) {
-            int sub_j = 0;
-            for (int k = 0; k < size; k++) {
-                if (k == j) continue;
-                submatrix[sub_i][sub_j] = matrix[i][k];
-                sub_j++;
-            } 
-            sub_i++;
-        }
-        
-        det += pow(-1, j) * matrix[0][j] * determinant(submatrix, size - 1);
-    }
-    
-    for (int i = 0; i < size - 1; i++) {
-        free(submatrix[i]);
-    }
-    free(submatrix);
-    
-    return det;
-}
-
 double Det (Tensor* matrix) {
     double ** sub_matrix = (double**)malloc(matrix->shape[0] * sizeof(double*));
     for (int i = 0; i < matrix->shape[0]; i++) {
@@ -562,46 +640,6 @@ double Det (Tensor* matrix) {
     }
 
     return determinant(sub_matrix, matrix->shape[0]);
-}
-
-void matrix_inverse (double** matrix, double** inverse, int N) {
-    double det = determinant(matrix, N);
-    
-    if (det == 0) {
-        printf("Matrix is singular and cannot be inverted.\n");
-        return;
-    }
-    
-    double adjoint[N][N];
-    
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            double ** sub_matrix = (double**)malloc(N * sizeof(double*));
-            for (int i = 0; i < N; i++) {
-                sub_matrix[i] = (double*)malloc(N * sizeof(double));
-            }
-            int subi = 0;
-            for (int r = 0; r < N; r++) {
-                if (r == i)
-                    continue;
-                int subj = 0;
-                for (int c = 0; c < N; c++) {
-                    if (c == j)
-                        continue;
-                    sub_matrix[subi][subj] = matrix[r][c];
-                    subj++;
-                }
-                subi++;
-            }
-            adjoint[j][i] = pow(-1, i + j) * determinant(sub_matrix, N - 1);
-        }
-    }
-    
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            inverse[i][j] = adjoint[i][j] / det;
-        }
-    }
 }
 
 Tensor* Inverse (Tensor* matrix) {
@@ -761,21 +799,59 @@ Tensor* Hstack (Tensor* m1, Tensor* m2) {
     return new_matrix;
 }
 
+Tensor* Reduce (Tensor* m1, int axis) {
+    if (axis == 2) {
+        return SUM(m1);
+    }
+    else if (axis == 0) {
+        int shape[2] = {m1->shape[0], 1};
+        Tensor* vector = CreateMatrix(shape);
+        for (int i = 0; i < m1->shape[0]; i++) {
+            double sum = 0;
+            for (int j = 0; j < m1->shape[1]; j++) {
+                sum += m1->array[i * m1->stride[0] + j * m1->stride[1]];
+            }
+            vector->array[i * vector->stride[0]] = sum;
+        }
+        return vector;
+    } else {
+        int shape[2] = {1, m1->shape[1]};
+        Tensor* vector = CreateMatrix(shape);
+        for (int i = 0; i < m1->shape[1]; i++) {
+            double sum = 0;
+            for (int j = 0; j < m1->shape[1]; j++) {
+                sum += m1->array[i * m1->stride[0] + j * m1->stride[1]];
+            }
+            vector->array[i * vector->stride[1]] = sum;
+        }
+        return vector;
+    }
+    printf("Enter valid axis");
+    return NULL;
+}
+
+Tensor* Copy (Tensor* matrix) {
+    Tensor* mat = CreateMatrix(matrix->shape);
+    for (int i = 0; i < matrix->shape[0]; i++) {
+        for (int j = 0; j < matrix->shape[1]; j++) {
+            mat->array[i * mat->stride[0] + j * mat->stride[1]] = matrix->array[i * matrix->stride[0] + j * matrix->stride[1]];
+        }
+    }
+    return mat;
+}
+
 // int main () {
 //     clock_t start, end;
 //     double cpu_time_used;
 
 //     start = clock();
 
-//     int shape[2] = {5, 4};
 //     int newShape[2] = {5, 5};
 
-//     Tensor* r = Random(shape);
-//     Tensor* I = Eye(newShape);
-//     Tensor* h = Hstack(r, I);
+//     Tensor* I = Random(newShape);
+//     Tensor* v = Reduce(I, 2);
 
-//     Print(h);
-
+//     Print(v);
 //     end = clock();
 
 //     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
