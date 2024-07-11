@@ -2,65 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <time.h>
 #include <math.h>
-
-/*
- ****************************************************************************
- *                                Structs                                   *
- ****************************************************************************
- */
-
-typedef enum {
-    FREE_0,
-    FREE_1,
-    FREE_2,
-    FREE_BOTH
-}FreeFlag;
-
-typedef enum {
-    OP_NULL,
-    OP_ADD,
-    OP_SUBTRACT,
-    OP_MULTIPLY,
-    OP_MATMUL,
-    OP_SIN,
-    OP_COS,
-    OP_TAN,
-    OP_LOG,
-    OP_ELE_POW,
-    OP_TRANSPOSE,
-    OP_SUM,
-    OP_MEAN,
-    OP_STD,
-    OP_SCALAR
-}Operations;
-
-typedef enum {
-    TRUE,
-    FALSE
-}bool;
-
-typedef struct {
-  char *start;
-  char *end;
-} Range;
-
-typedef struct {
-    double* array;
-    int     shape[2];
-    int     stride[2];
-}Matrix;
-
-typedef struct Tensor {
-    bool           requires_grad;
-    double         power;
-    double         scalar;
-    Matrix*        gradient;
-    Matrix*        tensor_matrix;
-    Operations     creation_operation;
-    struct Tensor* parents[2];
-}Tensor;
+#include <time.h>
+#include "numC.h"
 
 static size_t total_allocated_memory;
 
@@ -739,7 +683,7 @@ Tensor* CreateTensor (int shape[2]) {
     return matrix;
 }
 
-Tensor* Zeros (int shape[2], bool requires_grad) {
+Tensor* Zeros (int shape[2], Bool requires_grad) {
     Tensor* zeros = CreateTensor(shape);
     free_matrix(zeros->tensor_matrix);
     zeros->tensor_matrix = zero_matrix(shape);
@@ -748,7 +692,7 @@ Tensor* Zeros (int shape[2], bool requires_grad) {
     return zeros;
 }
 
-Tensor* Ones (int shape[2], bool requires_grad) {
+Tensor* Ones (int shape[2], Bool requires_grad) {
     Tensor* ones = CreateTensor(shape);
     free_matrix(ones->tensor_matrix);
     ones->tensor_matrix = ones_matrix(shape);
@@ -757,7 +701,7 @@ Tensor* Ones (int shape[2], bool requires_grad) {
     return ones;
 }
 
-Tensor* Random (int shape[2], bool requires_grad) {
+Tensor* Random (int shape[2], Bool requires_grad) {
     Tensor* ones = CreateTensor(shape);
     for (int i = 0; i < shape[0] * shape[1]; i++) {
         int rand_value = rand();
@@ -768,7 +712,7 @@ Tensor* Random (int shape[2], bool requires_grad) {
     return ones;
 }
 
-Tensor* Gaussian (int shape[2], double mean, double std, bool requires_grad) {
+Tensor* Gaussian (int shape[2], double mean, double std, Bool requires_grad) {
     srand(time(NULL));
     Tensor* normal = CreateTensor(shape);
     for (int i = 0; i < shape[0] * shape[1]; i++) {
@@ -780,7 +724,7 @@ Tensor* Gaussian (int shape[2], double mean, double std, bool requires_grad) {
     return normal;
 }
 
-Tensor* Eye (int shape[2], bool requires_grad) {
+Tensor* Eye (int shape[2], Bool requires_grad) {
     assert (shape[0] == shape[1]);
 
     Tensor* eye = CreateTensor(shape);
@@ -813,7 +757,7 @@ double Det (Tensor* matrix) {
     return determinant(sub_matrix, matrix->tensor_matrix->shape[0]);
 }
 
-Tensor* Inverse (Tensor* matrix, bool requires_grad) {
+Tensor* Inverse (Tensor* matrix, Bool requires_grad) {
     double ** sub_matrix = (double**)malloc_trace(matrix->tensor_matrix->shape[0] * sizeof(double*));
     for (int i = 0; i < matrix->tensor_matrix->shape[0]; i++) {
         sub_matrix[i] = (double*)malloc_trace(matrix->tensor_matrix->shape[0] * sizeof(double));
@@ -1449,21 +1393,5 @@ void Backward (Tensor* Z) {
     Matrix* back_grad = ones_matrix(Z->tensor_matrix->shape);
     backward(Z, back_grad);
 }
-
-// int main () { 
-//     srand(time(NULL));
-//     clock_t start, end;
-//     double cpu_time_used;
-//     size_t before;
-//     size_t after;
-//     start = clock();
-
-//     end = clock();
-//     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-//     printf("\n");
-//     printf("Total compile time:       %f seconds\n", cpu_time_used);
-//     printf("\n");
-//     return 0;
-// }
 
 // gcc numC.c -o exec
