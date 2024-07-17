@@ -660,6 +660,49 @@ Matrix* eye_matrix (int shape[2]) {
     return new_matrix;
 }
 
+Matrix* relu_matrix (Matrix* m1, char* grad, FreeFlag free) {
+    Matrix* new_matrix = empty_matrix(m1->shape);
+
+    for (int i = 0; i < m1->shape[0]; i++) {
+        for (int j = 0; j < m1->shape[1]; j++) {
+            double value = m1->array[
+                i * new_matrix->stride[0] +
+                j * new_matrix->stride[1]
+            ];
+            if (value < 0) {
+                new_matrix->array[
+                    i * new_matrix->stride[0] +
+                    j * new_matrix->stride[1]
+                ] = 0;
+            }
+            if (strcmp(grad, "r") == 0 && value > 0) {
+                new_matrix->array[
+                    i * new_matrix->stride[0] +
+                    j * new_matrix->stride[1]
+                ] = value;
+            } else if (value > 0) {
+                new_matrix->array[
+                    i * new_matrix->stride[0] +
+                    j * new_matrix->stride[1]
+                ] = 1;
+            }
+        }
+    }
+
+    switch (free) {
+        
+        case FREE_1 :
+            free_matrix(m1);
+            break;
+        
+        default:
+            break;
+            
+    }
+
+    return new_matrix;
+}
+
 /*
  ****************************************************************************
  *                             Creation Operations                          *
@@ -987,8 +1030,6 @@ Tensor* Cos (Tensor* matrix) {
 }
 
 Tensor* Tan (Tensor* matrix) {
-    int rows = matrix->tensor_matrix->shape[0];
-    int cols = matrix->tensor_matrix->shape[1];
 
     Tensor* new_matrix = CreateTensor(matrix->tensor_matrix->shape);
     new_matrix->creation_operation = OP_TAN;
@@ -1063,6 +1104,10 @@ Tensor* Pow (Tensor* matrix, double n) {
 }
 
 Tensor* Scalar (Tensor* matrix, double value) {
+    if (value == 0) {
+        printf("Division by Zero error!");
+        exit(EXIT_FAILURE);
+    }
     Tensor* new_matrix = CreateTensor(matrix->tensor_matrix->shape);
 
     new_matrix->parents[0] = matrix;
@@ -1077,6 +1122,23 @@ Tensor* Scalar (Tensor* matrix, double value) {
     }
 
     new_matrix->scalar = value;
+
+    return new_matrix;
+}
+
+Tensor* Relu (Tensor* matrix) {
+
+    Tensor* new_matrix = CreateTensor(matrix->tensor_matrix->shape);
+    new_matrix->creation_operation = OP_RELU;
+    new_matrix->parents[0] = matrix;
+    free_matrix(new_matrix->tensor_matrix);
+    new_matrix->tensor_matrix = relu_matrix(matrix->tensor_matrix, "r", FREE_0);
+
+    if (matrix->requires_grad == TRUE) {
+        new_matrix->requires_grad = TRUE;
+    } else {
+        new_matrix->requires_grad = FALSE;
+    }
 
     return new_matrix;
 }
@@ -1308,6 +1370,10 @@ Tensor* Copy (Tensor* matrix) {
  ****************************************************************************
 */
 
+void Zero_grad (Tensor* weight) {
+    weight->gradient = zero_matrix(weight->gradient->shape);
+}
+
 void backward (Tensor* Z, Matrix* backward_gradient) {
 
     if (Z->requires_grad == FALSE) {
@@ -1375,9 +1441,18 @@ void backward (Tensor* Z, Matrix* backward_gradient) {
         case OP_MATMUL:
             backward(Z->parents[0], matmul_matrix(Z->gradient, transpose_matrix(Z->parents[1]->tensor_matrix, FREE_0), FREE_2));
             backward(Z->parents[1], transpose_matrix(matmul_matrix(transpose_matrix(Z->gradient, FREE_0), Z->parents[0]->tensor_matrix, FREE_1), FREE_1));
+            break;
 
         case OP_SCALAR:
             backward(Z->parents[0], scalar_mult_matrix(eye_matrix(Z->gradient->shape), Z->scalar, FREE_1));
+            break;
+        
+        case OP_RELU:
+            backward(Z->parents[0], mult_matrix(Z->gradient, relu_matrix(Z->parents[0]->tensor_matrix, "g", FREE_0), FREE_2));
+            break;
+        
+        case OP_SUM:
+            backward(Z->parents[0], scalar_mult_matrix(ones_matrix(Z->parents[0]->gradient->shape), Z->gradient->array[0], FREE_1));
             break;
 
         default:

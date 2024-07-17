@@ -1,3 +1,6 @@
+#ifndef NUM_C
+#define NUM_C
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +37,8 @@ typedef enum {
     OP_SUM,
     OP_MEAN,
     OP_STD,
-    OP_SCALAR
+    OP_SCALAR,
+    OP_RELU
 }Operations;
 
 typedef struct {
@@ -96,6 +100,7 @@ Tensor* Log (Tensor* matrix);
 Tensor* Element_Pow (Tensor* matrix, double n);
 Tensor* Pow (Tensor* matrix, double n);
 Tensor* Scalar (Tensor* matrix, double value);
+Tensor* Relu (Tensor* matrix);
 
 // ------------------ Scalar Operations ------------------ // 
 
@@ -116,5 +121,8 @@ Tensor* Copy (Tensor* matrix);
 
 // ------------------ AutoGrad ------------------ // 
 
+void Zero_grad (Tensor* weight);
 void Update (Tensor* Weight, double learning_rate);
 void Backward (Tensor* Z);
+
+#endif
