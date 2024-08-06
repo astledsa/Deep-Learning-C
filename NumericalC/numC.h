@@ -19,7 +19,7 @@ typedef enum {
     FREE_0,
     FREE_1,
     FREE_2,
-    FREE_BOTH
+    FREE_BOTH,
 }FreeFlag;
 
 typedef enum {
@@ -101,9 +101,11 @@ Tensor* Element_Pow (Tensor* matrix, double n);
 Tensor* Pow (Tensor* matrix, double n);
 Tensor* Scalar (Tensor* matrix, double value);
 Tensor* Relu (Tensor* matrix);
+void Softmax (Tensor* tensor);
 
 // ------------------ Scalar Operations ------------------ // 
 
+void Normalize (Tensor* input, double epsilon);
 double Min (Tensor* matrix);
 double Max (Tensor* matrix);
 Tensor* Sum (Tensor* matrix);
@@ -118,6 +120,8 @@ Tensor* Vstack (Tensor* m1, Tensor* m2);
 Tensor* Hstack (Tensor* m1, Tensor* m2);
 Tensor* Reduce (Tensor* m1, int axis);
 Tensor* Copy (Tensor* matrix);
+Tensor** EqualSplit (Tensor* main, int axis, int number, FreeFlag toFree);
+Tensor* Concatenate (Tensor** tensors, int tensorArrayLength, FreeFlag toFree);
 
 // ------------------ AutoGrad ------------------ // 
 

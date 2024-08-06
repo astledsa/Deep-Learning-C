@@ -7,6 +7,11 @@
 #include <math.h>
 #include "numC.h"
 
+typedef enum {
+    FIRST,
+    MIDDLE
+}LayerPos;
+
 typedef struct {
     Tensor** tensor_array;
     int      maximum_batch;
@@ -17,7 +22,7 @@ typedef struct {
     int      paramNumber;
     Tensor** parameters;
 
-    Batch* (*forward) (Batch*, Tensor**, char*);
+    Batch* (*forward) (Batch*, Batch*, Tensor**, LayerPos);
 }Layer;
 
 typedef struct {
@@ -32,6 +37,7 @@ typedef struct {
     int    batch_size;
     int    epochs;
     double learning_rate;
+    double* losses;
 }Trainer;
 
 void free_batch (Batch* b);
@@ -40,9 +46,10 @@ void Train (Trainer trainer, int threads);
 void AddInput (Batch* batch, Tensor* input);
 void AddLayer (Model* model, Layer* layer);
 void print_trainer_info (Trainer trainer);
+void plot_wave(double* values, int size, int normalize, int logarithmic, int HEIGHT, int WIDTH);
 
 Batch* InitBatch (Tensor* input, int batch_size);
-Layer* InitLayer (Batch* (*forward) (Batch*, Tensor**, char*), int numberOfParams, int shapes[][2], char* initialization);
+Layer* InitLayer (Batch* (*forward) (Batch*, Batch*, Tensor**, LayerPos), int numberOfParams, int shapes[][2], char* initialization);
 Model* InitModel (Layer* firstLayer);
 
 #endif

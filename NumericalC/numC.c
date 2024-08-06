@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <float.h>
 #include <math.h>
 #include <time.h>
 #include "numC.h"
@@ -912,6 +913,49 @@ void subset_EleMul (Tensor* main, Tensor* values_to_add, char* index[2]) {
     free(output);
 }
 
+void Softmax (Tensor* tensor) {
+    int rows = tensor->tensor_matrix->shape[0];
+    int cols = tensor->tensor_matrix->shape[1];
+
+    for (int i = 0; i < rows; i++) {
+        double max_value = -DBL_MAX;
+
+        for (int j = 0; j < cols; j++) {
+            if (tensor->tensor_matrix->array[
+                i * tensor->tensor_matrix->stride[0] + 
+                j * tensor->tensor_matrix->stride[1]
+            ] > max_value) {
+                max_value = tensor->tensor_matrix->array[
+                i * tensor->tensor_matrix->stride[0] + 
+                j * tensor->tensor_matrix->stride[1]
+            ];
+            }
+        }
+
+        double sum = 0.0;
+        for (int j = 0; j < cols; j++) {
+            tensor->tensor_matrix->array[
+                i * tensor->tensor_matrix->stride[0] + 
+                j * tensor->tensor_matrix->stride[1]
+            ] = exp(tensor->tensor_matrix->array[
+                i * tensor->tensor_matrix->stride[0] + 
+                j * tensor->tensor_matrix->stride[1]
+            ] - max_value);
+            sum += tensor->tensor_matrix->array[
+                i * tensor->tensor_matrix->stride[0] + 
+                j * tensor->tensor_matrix->stride[1]
+            ];
+        }
+
+        for (int j = 0; j < cols; j++) {
+            tensor->tensor_matrix->array[
+                i * tensor->tensor_matrix->stride[0] + 
+                j * tensor->tensor_matrix->stride[1]
+            ] /= sum;
+        }
+    }
+}
+
 /*
  ****************************************************************************
  *                        ElementWise Operations                            *
@@ -1149,6 +1193,30 @@ Tensor* Relu (Tensor* matrix) {
  ****************************************************************************
 */
 
+void Normalize (Tensor* input, double epsilon){
+    Tensor* mean = Mean(input);
+    Tensor* std = Std(input);
+
+    for (int i = 0; i < input->tensor_matrix->shape[0]; i++) {
+        for (int j = 0; j < input->tensor_matrix->shape[1]; j++) {
+            double ele = input->tensor_matrix->array[
+                (i * input->tensor_matrix->stride[0]) +
+                (j * input->tensor_matrix->stride[1])
+            ];
+            double numerator = ele - mean->tensor_matrix->array[0];
+            double denominator = sqrt(pow(std->tensor_matrix->array[0], 2.0) + epsilon);
+
+            input->tensor_matrix->array[
+                (i * input->tensor_matrix->stride[0]) +
+                (j * input->tensor_matrix->stride[1])
+            ] = numerator / denominator;
+        }
+    }
+
+    free_tensor(std);
+    free_tensor(mean);
+};
+
 double Min (Tensor* matrix) {
     double min = matrix->tensor_matrix->array[0];
     for (int i = 1; i < (matrix->tensor_matrix->shape[0] * matrix->tensor_matrix->shape[1]); i++) {
@@ -1240,7 +1308,6 @@ Tensor* Std (Tensor* matrix) {
 
     return new_matrix;
 }
-
 
 /*
  ****************************************************************************
@@ -1363,6 +1430,91 @@ Tensor* Copy (Tensor* matrix) {
     }
     return mat;
 }
+
+Tensor** EqualSplit (Tensor* main, int axis, int number, FreeFlag toFree) {
+    assert (axis == 0 || axis == 1);
+    assert (number <= main->tensor_matrix->shape[0] && number <= main->tensor_matrix->shape[1]);
+
+    int shape[2];
+    Tensor** split_tensors = (Tensor**)malloc_trace(number * sizeof(Tensor*));
+
+    if (axis == 0) {
+        assert (main->tensor_matrix->shape[0] % number == 0);
+        int start = 0;
+        int end = shape[0] = main->tensor_matrix->shape[0] / number;
+        shape[1] = main->tensor_matrix->shape[1];
+        
+        for (int k = 0; k < number; k++) {
+            split_tensors[k] = CreateTensor(shape);
+            
+            for (int i = start; i < end; i++) {
+                for (int j = 0; j < main->tensor_matrix->shape[1]; j++) {
+
+                    split_tensors[k]->tensor_matrix->array[
+                        (i - start) * split_tensors[k]->tensor_matrix->stride[0] + 
+                        j * split_tensors[k]->tensor_matrix->stride[1]
+                    ] = 
+                    main->tensor_matrix->array[
+                        i * main->tensor_matrix->stride[0] +
+                        j * main->tensor_matrix->stride[1]
+                    ];
+
+                }
+            }
+            start = end;
+            end += shape[0];
+        }
+        
+    } else {
+        assert (main->tensor_matrix->shape[1] % number == 0);
+        int start = 0;
+        int end = shape[1] = main->tensor_matrix->shape[1] / number;
+        shape[0] = main->tensor_matrix->shape[0];
+        
+        for (int k = 0; k < number; k++) {
+            split_tensors[k] = CreateTensor(shape);
+            
+            for (int i = 0; i < main->tensor_matrix->shape[0]; i++) {
+                for (int j = start; j < end; j++) {
+
+                    split_tensors[k]->tensor_matrix->array[
+                        i * split_tensors[k]->tensor_matrix->stride[0] + 
+                        (j - start) * split_tensors[k]->tensor_matrix->stride[1]
+                    ] = 
+                    main->tensor_matrix->array[
+                        i * main->tensor_matrix->stride[0] +
+                        j * main->tensor_matrix->stride[1]
+                    ];
+
+                }
+            }
+            start = end;
+            end += shape[1];
+        }
+    }
+    
+    if (toFree == FREE_1) {
+        free_tensor(main);
+    }
+
+    return split_tensors;
+};
+
+Tensor* Concatenate (Tensor** tensors, int tensorArrayLength, FreeFlag toFree) {
+    Tensor* finalTensor = tensors[0];
+    for (int i = 1; i < tensorArrayLength; i++) {
+        finalTensor = Hstack(tensors[i], finalTensor);
+        if (toFree == FREE_1) {
+            free_tensor(tensors[i]);
+        }
+    }
+
+    if (toFree == FREE_1) {
+        free(tensors);
+    }
+
+    return finalTensor;
+};
 
 /*
  ****************************************************************************

@@ -100,7 +100,6 @@ void AddLayer (Model* model, Layer* layer) {
 }
 
 
-
 Tensor* BatchLoss (Batch* true, Batch* output) {
     int shape[2] = {1, 1};
     Tensor* loss = Zeros(shape, TRUE);
@@ -125,13 +124,12 @@ Batch* InitBatch (Tensor* input, int batch_size) {
 };
 
 Batch* ModelForward (Batch* input, Model* model) {
-    Batch* output;
+    Batch* output = InitBatch(input->tensor_array[0], input->maximum_batch);;
     for (int i = 0; i < model->layerCount; i++) {
-        if (i == 0) {
-            output = model->layers[i]->forward(input, model->layers[i]->parameters, "t");
-        } else {
-            output = model->layers[i]->forward(output, model->layers[i]->parameters, "f");
-        }
+        LayerPos pos;
+        if (i == 0) {pos = FIRST;}
+        else {pos = MIDDLE;}
+        output = model->layers[i]->forward(input, output, model->layers[i]->parameters, pos);
     }
     return output;
 };
@@ -147,7 +145,7 @@ Batch* split_batch (Batch* main_batch, int start, int stop) {
     return split;
 };
 
-Layer* InitLayer (Batch* (*forward) (Batch*, Tensor**, char*), int numberOfParams, int shapes[][2], char* initialization) {
+Layer* InitLayer (Batch* (*forward) (Batch*, Batch*, Tensor**, LayerPos), int numberOfParams, int shapes[][2], char* initialization) {
     Layer* layer = (Layer*)malloc_trace(sizeof(Layer));
     
     if (numberOfParams > 0) {
@@ -260,7 +258,6 @@ Trainer* split_trainers (Trainer main_trainer, int threads) {
 }
 
 
-
 void Synchronize (Trainer main_trainer, Trainer* all_trainers, int threads) {
     printf("Synchronization Started\n");
     main_trainer.model = NULL;
@@ -299,13 +296,13 @@ void* train_single_thread (void* t) {
         Tensor* Loss = BatchLoss(trainer->true, Output);
         
         Backward(Loss);
-        if (i % 10 == 0) {
-            printf("Loss is %f\n", Loss->tensor_matrix->array[0]);
-        }
+        trainer->losses[i] = Loss->tensor_matrix->array[0];
+        
         Optimize(trainer->model, trainer->learning_rate);
         
         free_batch(Output);
         free_tensor(Loss);
+
     }
 
     printf("Thread trained\n");
@@ -315,8 +312,9 @@ void* train_single_thread (void* t) {
 }
 
 void Train (Trainer trainer, int threads) {
-    Trainer* multi_thread_trainers = split_trainers(trainer, threads);
-    if (multi_thread_trainers) {
+
+    if (threads > 1) {
+        Trainer* multi_thread_trainers = split_trainers(trainer, threads);
 
         pthread_t train_threads[threads];
 
@@ -341,4 +339,60 @@ void Train (Trainer trainer, int threads) {
         train_single_thread((void*) t);
     }
     printf("Done!\n");
+
 };
+
+void plot_wave(double* values, int size, int normalize, int logarithmic, int HEIGHT, int WIDTH) {
+    char screen[HEIGHT][WIDTH];
+    int x, y;
+
+    // Normalize values if required
+    if (normalize) {
+        double max_val = values[0];
+        double min_val = values[0];
+        for (int i = 1; i < size; i++) {
+            if (values[i] > max_val) max_val = values[i];
+            if (values[i] < min_val) min_val = values[i];
+        }
+        double range = max_val - min_val;
+        for (int i = 0; i < size; i++) {
+            values[i] = 2 * ((values[i] - min_val) / range) - 1;
+        }
+    }
+
+    // Apply logarithmic scale if required
+    if (logarithmic) {
+        double log_base = 10.0; // You can change the base if needed
+        for (int i = 0; i < size; i++) {
+            // To avoid taking log of zero or negative values
+            if (values[i] > 0) {
+                values[i] = log(values[i]) / log(log_base);  // Logarithm of the value with base log_base
+            } else {
+                values[i] = -INFINITY;  // Represents an undefined logarithmic value
+            }
+        }
+    }
+
+    // Clear screen
+    for (y = 0; y < HEIGHT; y++) {
+        for (x = 0; x < WIDTH; x++) {
+            screen[y][x] = ' ';
+        }
+    }
+
+    // Plot values
+    for (x = 0; x < size && x < WIDTH; x++) {
+        int y_value = (int)((values[x] + 1.0) * HEIGHT / 2.0);
+        if (y_value >= 0 && y_value < HEIGHT) {
+            screen[HEIGHT - y_value - 1][x] = '*';
+        }
+    }
+
+    // Draw the screen
+    for (y = 0; y < HEIGHT; y++) {
+        for (x = 0; x < WIDTH; x++) {
+            putchar(screen[y][x]);
+        }
+        putchar('\n');
+    }
+}
