@@ -1,25 +1,11 @@
-/*
- * Minimal GPT-Style Model Implementation
- * 
- * This code defines a simple transformer-based model inspired by GPT.
- * It consists of multiple transformer layers with self-attention, 
- * layer normalization, and feed-forward networks.
- * 
- * The model follows the architecture:
- *   - Multi-head self-attention
- *   - Add & Norm
- *   - Feed-forward network
- *   - Add & Norm
- * 
- * The GenerateText function simulates iterative text generation.
- */
-
 // Initialize a GPT-style model
+// The hidden size is: 12,288 dimensions
+// The FFN layer is: 49,152 dimensions
 Model* InitGPT(int layers) {
-    int input_shape[2] = {20, 20};
-    int transformer_weights[4][2] = {{20, 40}, {20, 40}, {20, 40}, {40, 20}};
-    int layer_norm_weights[2][2] = {{20, 20}, {20, 20}};
-    int ffn_weights[4][2] = {{20, 20}, {20, 20}, {20, 20}, {20, 20}};
+    int input_shape[2] = {12288, 12288};
+    int transformer_weights[4][2] = {{12288, 49152}, {12288, 49152}, {12288, 49152}, {49152, 12288}};
+    int layer_norm_weights[2][2] = {{12288, 12288}, {12288, 12288}};
+    int ffn_weights[4][2] = {{12288, 49152}, {49152, 12288}, {12288, 49152}, {49152, 12288}};
 
     Model* GPT = InitModel(InitLayer(transformer_forward, 4, transformer_weights, "r"));
 
@@ -32,7 +18,6 @@ Model* InitGPT(int layers) {
     return GPT;
 }
 
-// Generate text using the model
 Batch* GenerateText(Model* GPT, Batch* input, int steps) {
     for (int i = 0; i < steps; i++) {
         Train((Trainer){GPT, input, input, 1, 1, 0.1, malloc_trace(sizeof(double))}, 1);
@@ -40,12 +25,13 @@ Batch* GenerateText(Model* GPT, Batch* input, int steps) {
     return input;
 }
 
+// The original GPT-3 had 96 transformer layers
 int main() {
     int input_shape[2] = {20, 20};
     Batch* Input = InitBatch(Random(input_shape, FALSE), 1);
-    Model* GPT = InitGPT(6);
+    Model* GPT = InitGPT(96);
 
-    Batch* Output = GenerateText(GPT, Input, 10);
+    Batch* Output = GenerateText(GPT, Input, 2048);
     Print(Output->tensor_array[0]);
     
     return 0;
