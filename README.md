@@ -7,5 +7,6 @@ This is a simple deep learning framework based on the Pytorch library. In this r
 - Layer and Model abstractions
 - Data Parallelism 
 - A Transformer Layer
+- Generative Pre-trained Transformer model 
 
 from scratch in C. The purpose was to learn the engineering difficulties and to explore parallelism in such frameworks.
